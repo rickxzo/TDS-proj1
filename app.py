@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 import json
 import time
 import base64
+import threading
 
 import replicate
 
@@ -230,33 +231,8 @@ def commit_code(repo_full_name, code):
         return resp.status_code, {"text": resp.text}
 
 
-@app.route('/build', methods=['GET', 'POST'])
-def build():
-    # For GET requests return a short help message
-    if request.method == 'GET':
-        return jsonify({"message": "POST JSON to this endpoint. Expecting 'secret', 'checks', and 'brief' fields."}), 200
-
-    # POST handling
-    data = request.get_json(silent=True)
-    print('--- /build request received ---')
-    print('Headers:')
-    # print relevant headers for debugging (avoid printing very large secrets)
-    try:
-        headers = dict(request.headers)
-        print(headers)
-    except Exception:
-        print('Could not read headers')
-
-    print('JSON body:')
-    print(data)
-
-    if not data:
-        return jsonify({"error": "Missing or invalid JSON body"}), 400
-
-    # Validate secret
-    if SECRET_KEY and data.get("secret") != SECRET_KEY:
-        print('Invalid secret provided:', data.get('secret'))
-        return jsonify({"error": "Invalid secret"}), 403
+def build(data):
+    
 
     resp = get_init(data)
     print("AI Response:", resp)
@@ -374,6 +350,36 @@ def build():
 
     return jsonify({"status": "ok", "ai_response": repo_payload, "make_repo": make_repo_resp, "commit": commit_resp}), 200
 
+@app.route("/verify", methods=['GET', 'POST'])
+def verify():
+    if request.method == 'GET':
+        return jsonify({"message": "POST JSON to this endpoint. Expecting 'secret', 'checks', and 'brief' fields."}), 200
+
+    # POST handling
+    data = request.get_json(silent=True)
+    print('--- /build request received ---')
+    print('Headers:')
+    # print relevant headers for debugging (avoid printing very large secrets)
+    try:
+        headers = dict(request.headers)
+        print(headers)
+    except Exception:
+        print('Could not read headers')
+
+    print('JSON body:')
+    print(data)
+
+    if not data:
+        return jsonify({"error": "Missing or invalid JSON body"}), 400
+
+    # Validate secret
+    if SECRET_KEY and data.get("secret") != SECRET_KEY:
+        print('Invalid secret provided:', data.get('secret'))
+        return jsonify({"error": "Invalid secret"}), 403
+
+    thread = threading.Thread(target=build, args=(data,), daemon=True)
+    thread.start()
+    return jsonify({"status": "ok", "message": "Verification endpoint reached"}), 200
 
 if __name__ == '__main__':
     # Use PORT env if provided (useful for deployments); bind to 0.0.0.0 for container friendliness
